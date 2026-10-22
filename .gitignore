@@ -1,0 +1,23 @@
+# Secrets: never commit these. Device configs and save files contain private keys and tokens.
+*.conf
+*-save.json
+*.key
+.env
+.env.*
+
+# Dependencies and tooling
+node_modules/
+.wrangler/
+npm-debug.log*
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
+
+# Test and scratch output
+*.log
+/tmp/

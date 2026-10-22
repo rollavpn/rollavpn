@@ -1,0 +1,11 @@
+// Cloudflare Workers config: serves web/ as static files. There's no Worker code.
+// Deploy with: npx wrangler deploy
+{
+  "name": "rollavpn",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./web"
+  },
+  // Workers Logs off. (Cloudflare itself still sees visitors' IPs, like any host.)
+  "observability": { "enabled": false }
+}

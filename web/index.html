@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src https://api.sporestack.com https://api.digitalocean.com https://api.hetzner.cloud https://api.linode.com; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>Roll a VPN</title>
+  <meta name="description" content="Your own WireGuard VPN on your own cloud account, set up from your browser.">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="vendor/qrcode.js"></script>
+  <script defer src="lib/wg.js"></script>
+  <script defer src="lib/providers.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap">
+      <h1>Roll your own VPN.</h1>
+      <p class="lede">A WireGuard server on <em>your</em> cloud account, in about three minutes.</p>
+      <ul class="promises">
+        <li>No backend. Your browser talks straight to your provider.</li>
+        <li>Keys are made here and never sent to us.</li>
+        <li>The server keeps no logs.</li>
+        <li>Pay with Monero, no account or email.</li>
+        <li><a href="#local">Run it locally</a> if you'd rather not trust this site.</li>
+      </ul>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <noscript><p class="callout bad">This page needs JavaScript. It all runs in your browser.</p></noscript>
+    <p id="unsupported" class="callout bad" hidden>Your browser can't make WireGuard keys. Use a current Chrome, Firefox, Safari or Edge.</p>
+
+    <!-- Open a save file -->
+    <details class="step restore" id="restore">
+      <summary class="step-head"><span class="num" aria-hidden="true">↻</span><h2>Already have a VPN? Open your save file</h2></summary>
+      <div class="step-body">
+        <p>Get your configs back, check the server, add time or delete it. The file never leaves this tab.</p>
+        <label class="field">
+          <span>Save file</span>
+          <input type="file" id="restore-file" accept=".json,application/json">
+        </label>
+        <label class="field" id="restore-pass-wrap" hidden>
+          <span>Password</span>
+          <input type="password" id="restore-pass" autocomplete="current-password">
+        </label>
+        <button class="btn primary" id="btn-restore" disabled>Open</button>
+        <p class="status" id="status-restore" role="status"></p>
+      </div>
+    </details>
+
+    <!-- Step 1 -->
+    <section class="step" id="step-1" data-step="1">
+      <div class="step-head"><span class="num">1</span><h2>Choose where it runs</h2><span class="done-mark" aria-hidden="true">✓</span></div>
+      <div class="step-body">
+        <p>You pay the provider directly. <strong>SporeStack</strong> needs no account and takes Monero.</p>
+        <div class="providers" id="providers" role="radiogroup" aria-label="Where your VPN runs"></div>
+        <div id="own-area" hidden>
+          <h3>What you need</h3>
+          <ul class="checklist">
+            <li>A spare machine with a fresh <strong>Ubuntu 24.04</strong> install and 1 GB+ of memory. Setup takes over the whole machine.</li>
+            <li>A public IP or hostname. At home you'll forward one UDP port on your router. Won't work behind CGNAT.</li>
+            <li>Root access.</li>
+          </ul>
+          <button class="btn primary" id="btn-own">My machine is ready</button>
+        </div>
+        <div id="token-area" hidden>
+          <ol class="howto">
+            <li>Open <a id="token-link" target="_blank" rel="noopener noreferrer">your provider's token page ↗</a></li>
+            <li id="token-help"></li>
+            <li>Paste it below. It stays in this tab.</li>
+          </ol>
+          <p class="callout tip" id="anon-tip" hidden>For more anonymity, do this in <a href="https://www.torproject.org/download/" target="_blank" rel="noopener noreferrer">Tor Browser</a> so SporeStack never sees your IP.</p>
+          <label class="field">
+            <span id="token-label">API token</span>
+            <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your API token">
+          </label>
+          <p class="callout warn" id="token-save" hidden><strong>Save this token now.</strong> It's your account and can't be recovered.</p>
+          <div class="row">
+            <button class="btn" id="btn-new-account" hidden>Create anonymous account</button>
+            <button class="btn primary" id="btn-connect" disabled>Connect</button>
+          </div>
+          <p class="status" id="status-1" role="status"></p>
+          <div id="existing" hidden>
+            <h3>Your existing rollavpn servers</h3>
+            <ul class="servers" id="existing-list"></ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 2 -->
+    <section class="step locked" id="step-2" data-step="2">
+      <div class="step-head"><span class="num">2</span><h2><span data-mode="cloud">Choose a location</span><span data-mode="own" hidden>Your server's address</span></h2><span class="done-mark" aria-hidden="true">✓</span></div>
+      <div class="step-body">
+        <div data-mode="cloud">
+          <p>Sites will see you here. Closer is faster.</p>
+          <label class="field">
+            <span>Location</span>
+            <select id="region"></select>
+          </label>
+          <p class="price" id="price"></p>
+          <button class="btn primary" id="btn-region">Use this location</button>
+        </div>
+        <div data-mode="own" hidden>
+                    <label class="field">
+            <span>Public IP address or hostname</span>
+            <input id="own-endpoint" type="text" spellcheck="false" autocomplete="off" placeholder="203.0.113.10 or vpn.example.net">
+            <small>At home, search "what is my IP" from that network.</small>
+          </label>
+          <button class="btn primary" id="btn-own-endpoint">Use this address</button>
+          <p class="status" id="status-2" role="status"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 3 -->
+    <section class="step locked" id="step-3" data-step="3">
+      <div class="step-head"><span class="num">3</span><h2>Make keys for your devices</h2><span class="done-mark" aria-hidden="true">✓</span></div>
+      <div class="step-body">
+        <p>Each device gets its own key.</p>
+        <div id="devices" class="devices"></div>
+        <button class="btn ghost small" id="btn-add-device">+ Add device</button>
+
+        <div class="exit-box">
+          <label class="check">
+            <input type="checkbox" id="warp-on" checked>
+            <span><strong>Blend in with Cloudflare WARP</strong><br>
+            <span class="muted">Traffic leaves from a Cloudflare address shared with millions of people, so few sites block it. No account needed. If WARP drops, traffic stops. Uses Cloudflare's <a href="https://www.cloudflare.com/application/terms/" target="_blank" rel="noopener noreferrer">WARP terms</a>. <span id="warp-own-note" data-mode="own" hidden>Off by default here, so your server keeps its own IP.</span></span></span>
+          </label>
+          <label class="check">
+            <input type="checkbox" id="exit-on">
+            <span><strong>Second hop</strong><br>
+            <span class="muted">Route through a second server you run, ideally on another host in another country. Neither host sees both who you are and where you go. Replaces WARP.</span></span>
+          </label>
+          <div id="exit-area" hidden>
+            <ol class="howto">
+              <li>In another tab, launch a second server in another country with one device named <code>hop</code>.</li>
+              <li>Paste its <code>hop</code> config below. Any WireGuard server works.</li>
+            </ol>
+            <textarea id="exit-conf" rows="7" spellcheck="false" autocomplete="off" placeholder="[Interface]&#10;# rollavpn: hop&#10;PrivateKey = …&#10;Address = …&#10;&#10;[Peer]&#10;PublicKey = …&#10;Endpoint = …"></textarea>
+            <p class="status" id="exit-status" role="status"></p>
+          </div>
+        </div>
+
+        <details class="advanced">
+          <summary>Advanced options</summary>
+          <label class="field">
+            <span>DNS</span>
+            <select id="dns"></select>
+          </label>
+          <label class="field">
+            <span>Port</span>
+            <select id="port">
+              <option value="51820">51820 (WireGuard default)</option>
+              <option value="443">443 (gets through more networks)</option>
+            </select>
+          </label>
+          <label class="check" data-mode="own" hidden>
+            <input type="checkbox" id="keep-ssh" checked>
+            <span><strong>Keep my current SSH access</strong><br>
+            <span class="muted">Untick to lock it down like a cloud server.</span></span>
+          </label>
+          <label class="field" id="ssh-field">
+            <span>SSH public key (optional)</span>
+            <textarea id="ssh" rows="2" spellcheck="false" placeholder="ssh-ed25519 AAAA… you@laptop"></textarea>
+            <small>Leave empty and SSH is off. Nobody can log in.</small>
+          </label>
+        </details>
+
+        <button class="btn primary" id="btn-keys">Generate keys in my browser</button>
+        <div id="keys-out" class="keys-out" hidden></div>
+      </div>
+    </section>
+
+    <!-- Step 4 -->
+    <section class="step locked" id="step-4" data-step="4">
+      <div class="step-head"><span class="num">4</span><h2><span data-mode="cloud">Launch your server</span><span data-mode="own" hidden>Get your setup script</span></h2><span class="done-mark" aria-hidden="true">✓</span></div>
+      <div class="step-body">
+        <p data-mode="cloud">This creates a small Ubuntu 24.04 server. On first boot it:</p>
+        <p data-mode="own" hidden>This makes a script you run once. It:</p>
+        <ul class="features">
+          <li>Keeps no logs: no journal, no syslog, <code>/var/log</code> in RAM, no swap, no core dumps.</li>
+          <li>Wipes a device's IP from memory a few minutes after it goes quiet.</li>
+          <li>Runs its own DNS with no query logs, blocking ads and trackers by default.</li>
+          <li>Removes provider agents, usage stats, snap, crash reporting and Ubuntu's ad pings.</li>
+          <li>Locks itself down: firewall on, root locked, SSH off unless you keep it, devices unreachable from outside and from each other.</li>
+          <li>Deletes its setup traces. Your provider still keeps its own copy of this script.</li>
+          <li>Exits through Cloudflare WARP, unless you turned it off.</li>
+          <li>Installs security updates automatically, and restarts WARP or DNS if they stop working.</li>
+        </ul>
+        <dl class="summary" id="summary"></dl>
+        <details class="script">
+          <summary>Read the script</summary>
+          <pre id="script-preview"></pre>
+        </details>
+        <div class="billing" id="billing" hidden>
+          <h3>Pay</h3>
+          <div class="row">
+            <label class="field inline">
+              <span>Run the server for</span>
+              <select id="days">
+                <option value="7">7 days</option>
+                <option value="30" selected>30 days</option>
+                <option value="90">90 days</option>
+              </select>
+            </label>
+          </div>
+          <p class="price" id="quote"></p>
+          <div id="topup" hidden>
+            <div class="row">
+              <label class="field inline">
+                <span>Pay with</span>
+                <select id="currency">
+                  <option value="xmr">Monero (private)</option>
+                  <option value="btc">Bitcoin (traceable)</option>
+                  <option value="bch">Bitcoin Cash (traceable)</option>
+                  <option value="usdt">USDT (traceable)</option>
+                </select>
+              </label>
+              <label class="field inline">
+                <span>Amount (USD)</span>
+                <input id="dollars" type="number" min="5" step="1" inputmode="numeric">
+              </label>
+            </div>
+            <button class="btn" id="btn-invoice">Create payment request</button>
+            <div class="invoice" id="invoice" hidden>
+              <canvas class="qr" id="invoice-qr" aria-label="Payment QR code"></canvas>
+              <div class="invoice-text">
+                <p>Send <strong id="invoice-amount"></strong> to:</p>
+                <p><code id="invoice-address" class="wrap-any"></code></p>
+                <div class="row">
+                  <button class="btn small" id="btn-copy-address">Copy address</button>
+                  <a class="btn small" id="invoice-open">Open in wallet</a>
+                </div>
+                <p class="muted" id="invoice-expiry"></p>
+              </div>
+            </div>
+          </div>
+          <p class="status" id="status-pay" role="status"></p>
+        </div>
+        <button class="btn primary" id="btn-launch">Launch server</button>
+        <p class="fine">By continuing, you agree to the <a href="terms.html" target="_blank" rel="noopener">terms</a>.</p>
+        <p class="status" id="status-4" role="status"></p>
+      </div>
+    </section>
+
+    <!-- Step 5 -->
+    <section class="step locked" id="step-5" data-step="5">
+      <div class="step-head"><span class="num">5</span><h2><span data-mode="cloud">Set up WireGuard</span><span data-mode="own" hidden>Run it on your server</span></h2><span class="done-mark" aria-hidden="true">✓</span></div>
+      <div class="step-body">
+        <ol class="howto own-steps" data-mode="own" hidden>
+          <li>Copy the script to the machine:
+            <div class="row"><button class="btn small primary" id="btn-dl-script">Download rollavpn-setup.sh</button><button class="btn small" id="btn-copy-script">Copy script</button></div>
+            <pre><code id="own-scp"></code></pre>
+            Or paste it into <code>nano rollavpn-setup.sh</code>, or into a new server's <em>user data</em> box.</li>
+          <li>Run it as root:
+            <pre><code>sudo bash rollavpn-setup.sh</code></pre>
+            It takes 2–4 minutes, prints <code>rollavpn: READY</code>, then deletes itself since it holds the server's key. Delete your local copy too.</li>
+          <li>At home, forward <strong>UDP port <span class="own-port">51820</span></strong> on your router to the machine.</li>
+        </ol>
+        <ol class="progress" id="progress" data-mode="cloud">
+          <li data-k="create">Server ordered</li>
+          <li data-k="boot">Booting</li>
+          <li data-k="install">Setting up</li>
+          <li data-k="ready">Ready</li>
+        </ol>
+        <div class="bar" aria-hidden="true" data-mode="cloud"><div class="bar-fill" id="bar-fill"></div></div>
+        <p class="status" id="status-5" role="status"></p>
+      </div>
+    </section>
+
+    <!-- Step 6 -->
+    <section class="step locked" id="step-6" data-step="6">
+      <div class="step-head"><span class="num">6</span><h2>Connect your devices</h2><span class="done-mark" aria-hidden="true">✓</span></div>
+      <div class="step-body">
+        <p>Get the <strong>WireGuard</strong> app (
+          <a href="https://apps.apple.com/app/wireguard/id1441195209" target="_blank" rel="noopener noreferrer">iPhone</a> ·
+          <a href="https://play.google.com/store/apps/details?id=com.wireguard.android" target="_blank" rel="noopener noreferrer">Android</a> ·
+          <a href="https://apps.apple.com/app/wireguard/id1451685025" target="_blank" rel="noopener noreferrer">Mac</a> ·
+          <a href="https://www.wireguard.com/install/" target="_blank" rel="noopener noreferrer">Windows/Linux</a>
+          ), then scan the QR code or import the file. Delete the downloaded files afterwards.</p>
+        <p class="callout warn" id="save-now"><strong>Save these now.</strong> The keys exist only in this tab.</p>
+        <div class="manage" id="manage" hidden>
+          <p class="status" id="manage-status" role="status"></p>
+          <div class="row">
+            <button class="btn small" id="btn-refresh">Check status</button>
+            <button class="btn small" id="btn-extend" hidden>+30 days</button>
+            <button class="btn small ghost" id="btn-start-over">Start over</button>
+          </div>
+          <div id="retoken" hidden>
+            <label class="field">
+              <span>New token</span>
+              <input type="password" id="retoken-input" autocomplete="off" spellcheck="false" placeholder="Paste a new API token">
+            </label>
+            <button class="btn small" id="btn-retoken">Use this token</button>
+          </div>
+        </div>
+        <details class="tips">
+          <summary>Keep the VPN on automatically</summary>
+          <ul>
+            <li><strong>iPhone, iPad, Mac:</strong> edit the tunnel and turn on <em>On-Demand</em> for Wi-Fi and cellular. To skip your home Wi-Fi, use <em>Except these SSIDs</em>. It's not a strict kill switch.</li>
+            <li><strong>Android:</strong> Settings → Network → VPN → ⚙ WireGuard → <em>Always-on VPN</em> and <em>Block connections without VPN</em>.</li>
+            <li><strong>Windows, Linux:</strong> nothing to do.</li>
+          </ul>
+        </details>
+        <div class="clients" id="clients"></div>
+        <div class="row">
+          <button class="btn" id="btn-download-all">Download all configs</button>
+        </div>
+        <div class="savebox">
+          <h3>Save file</h3>
+          <p>Open it here later to get your configs, check the server, add time or delete it.</p>
+          <p class="callout warn"><strong>Keep this file secret.</strong> It holds every key for this VPN and your <span class="provider-name">provider</span> token. Set a password, don't email it or put it in a cloud folder, and delete it when you delete the server.</p>
+          <label class="field">
+            <span>Password <small>(recommended)</small></span>
+            <input type="password" id="save-pass" autocomplete="new-password">
+          </label>
+          <label class="field">
+            <span>Repeat password</span>
+            <input type="password" id="save-pass2" autocomplete="new-password">
+          </label>
+          <button class="btn primary" id="btn-save">Download save file</button>
+          <p class="status" id="status-save" role="status"></p>
+        </div>
+        <div class="danger">
+          <h3>Done with it?</h3>
+          <p data-mode="cloud">Deleting the server stops billing.</p>
+          <p data-mode="own" hidden>Wipe the machine to shut it down.</p>
+          <button class="btn danger-btn" id="btn-destroy" data-mode="cloud">Delete this server</button>
+          <p class="status" id="status-6" role="status"></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="info" id="trust">
+      <h2>Why you don't have to trust us</h2>
+      <div class="grid">
+        <div>
+          <h3>No server</h3>
+          <p>rollavpn is static files. Its Content-Security-Policy only lets it reach the four provider APIs, so it can't send anything to us.</p>
+        </div>
+        <div>
+          <h3>Your keys</h3>
+          <p>Keys are made in your browser and only leave in files you download. The server's key travels in its setup script, which your provider (and SporeStack, if used) can see.</p>
+        </div>
+        <div>
+          <h3>Nothing to log in to</h3>
+          <p>SSH is off and root is locked unless you add a key. The only way in is WireGuard.</p>
+        </div>
+        <div>
+          <h3>Read it first</h3>
+          <p>Step 4 shows the exact script. The whole app is about 2,600 lines, with no build step.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="info" id="source">
+      <h2>Open source</h2>
+      <div class="grid">
+        <div>
+          <h3>WireGuard</h3>
+          <p><a href="https://www.wireguard.com/" target="_blank" rel="noopener noreferrer">WireGuard</a> is small enough to read, built into Linux since 5.6, and its protocol has <a href="https://www.wireguard.com/formal-verification/" target="_blank" rel="noopener noreferrer">formal proofs</a>. The server uses the version in Ubuntu's kernel.</p>
+        </div>
+        <div>
+          <h3>Build it yourself</h3>
+          <p>Skip app-store binaries and build from the <a href="https://www.wireguard.com/repositories/" target="_blank" rel="noopener noreferrer">official source</a>. On Linux:</p>
+          <pre><code>git clone https://git.zx2c4.com/wireguard-tools
+make -C wireguard-tools/src
+sudo make -C wireguard-tools/src install</code></pre>
+          <p>The other apps are in <code>wireguard-apple</code>, <code>wireguard-android</code> and <code>wireguard-windows</code>.</p>
+        </div>
+        <div>
+          <h3>Someone else's hardware</h3>
+          <p>A cloud server runs on someone else's computer. Its owner can read memory, copy the disk and watch traffic. No logs means nothing to hand over, but nothing on the server stops a host that's watching.</p>
+        </div>
+        <div>
+          <h3>True of every VPN</h3>
+          <p>Any VPN's "no logs" is a promise about hardware you can't inspect. rollavpn limits what one host can learn instead: pay anonymously, add a second hop, delete old servers. The only hardware you can fully trust is your own.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="info" id="limits">
+      <h2>What it does and doesn't do</h2>
+      <div class="grid">
+        <div>
+          <h3>It hides you from</h3>
+          <p>The Wi-Fi you're on and your ISP. Sites see the server's IP, not yours.</p>
+        </div>
+        <div>
+          <h3>Anonymity</h3>
+          <p>Your provider knows who pays. Use <strong>SporeStack</strong> so nobody does, and <strong>Second hop</strong> so no host sees both ends. Without WARP, sites see an IP only you use; a fresh server now and then breaks the link.</p>
+        </div>
+        <div>
+          <h3>It can't hide you on a site</h3>
+          <p>Logins, cookies and fingerprinting still identify you. Use separate browsers for separate identities, or <a href="https://www.torproject.org/" target="_blank" rel="noopener noreferrer">Tor Browser</a>.</p>
+        </div>
+        <div>
+          <h3>VPN detection</h3>
+          <p>Some sites block cloud IPs. WARP helps, but its addresses are still listed as VPN. Only a home connection looks like home, which is what <em>Your own server</em> is for.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="info" id="local">
+      <h2>Run it locally</h2>
+      <p>Get the <a href="https://github.com/rollavpn/rollavpn" target="_blank" rel="noopener noreferrer">source</a> and serve the <code>web/</code> folder from <code>localhost</code>. Opening the file directly won't work.</p>
+      <pre><code>git clone https://github.com/rollavpn/rollavpn.git
+cd rollavpn
+node serve.mjs          # or: python3 -m http.server -d web 8000
+# open http://localhost:8000</code></pre>
+      <p>No dependencies.</p>
+    </section>
+  </main>
+
+  <footer class="wrap foot">
+    <p>MIT License, no warranty. You're responsible for how you use it and what your provider charges. <a href="terms.html">Terms and privacy</a>. WireGuard is a registered trademark of Jason A. Donenfeld; rollavpn isn't affiliated with it or any provider.</p>
+    <p><a href="https://github.com/rollavpn/rollavpn" target="_blank" rel="noopener noreferrer">GitHub</a> · <a href="mailto:rollavpn@proton.me">rollavpn@proton.me</a></p>
+  </footer>
+</body>
+</html>

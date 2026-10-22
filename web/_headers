@@ -1,0 +1,10 @@
+# Security headers for every page. Cloudflare applies this file when hosting, and serve.mjs reads it
+# when running locally. The CSP only lets the page talk to the four provider APIs.
+/*
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src https://api.sporestack.com https://api.digitalocean.com https://api.hetzner.cloud https://api.linode.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Referrer-Policy: no-referrer
+  X-Content-Type-Options: nosniff
+  Cross-Origin-Opener-Policy: same-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Strict-Transport-Security: max-age=31536000
+  Cache-Control: no-cache
